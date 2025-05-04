@@ -1,27 +1,45 @@
-from .utils import get_sentiment
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 
+from .utils import analyze_single_text, analyze_decision
+
 @csrf_exempt
-def analyze_sentiment(request):
+def get_sentiment(request):
+    """
+    Django view to handle a batch of texts and return sentiments and a decision summary.
+    """
     if request.method == "POST":
         try:
-            # Parse JSON body
             body = json.loads(request.body)
-            text = body.get("text", "")
+            texts = body.get("texts", [])
 
-            # Validate text
-            if not isinstance(text, str) or not text.strip():
-                return JsonResponse({"error": "Invalid input. 'text' must be a non-empty string."}, status=400)
+            if not texts or not isinstance(texts, list):
+                return JsonResponse({"error": "'texts' must be a non-empty list of strings."}, status=400)
 
-            # Get sentiment
-            result = get_sentiment(text)
-            return JsonResponse(result)
+            results = []
+            for text in texts:
+                if not isinstance(text, str) or not text.strip():
+                    results.append({
+                        "text": text,
+                        "error": "Invalid or empty text"
+                    })
+                    continue
+
+                result = analyze_single_text(text)
+                result["text"] = text
+                results.append(result)
+
+            decision_summary = analyze_decision(results)
+
+            return JsonResponse({
+                "results": results,
+                "summary": decision_summary
+            })
 
         except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON body."}, status=400)
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
-    return JsonResponse({"error": "Only POST requests are allowed."}, status=405)
+    return JsonResponse({"error": "POST method required"}, status=405)
